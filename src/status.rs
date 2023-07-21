@@ -14,9 +14,10 @@ const RATE_LIMITING: Field = 16..20;
 const BACKLOG_LIMIT: Field = 20..24;
 const LOST: Field = 24..28;
 const BACKLOG: Field = 28..32;
+pub const MINIMAL_STATUS_MESSAGE_LEN: usize = BACKLOG.end;
 const FEATURE_BITMAP: Field = 32..36;
 const BACKLOG_WAIT_TIME: Field = 36..40;
-pub const STATUS_MESSAGE_LEN: usize = BACKLOG_WAIT_TIME.end;
+pub const MAXIMAL_STATUS_MESSAGE_LEN: usize = BACKLOG_WAIT_TIME.end;
 
 #[derive(Debug, PartialEq, Eq, Clone, Default)]
 #[non_exhaustive]
@@ -36,10 +37,13 @@ pub struct StatusMessage {
     pub lost: u32,
     /// Messages waiting in queue
     pub backlog: u32,
+
+    // Starting here, those fields may not be present in older kernels, hence
+    // the use of Option.
     /// bitmap of kernel audit features
-    pub feature_bitmap: u32,
+    pub feature_bitmap: Option<u32>,
     /// Message queue wait timeout
-    pub backlog_wait_time: u32,
+    pub backlog_wait_time: Option<u32>,
 }
 
 impl StatusMessage {
@@ -69,10 +73,10 @@ impl<T: AsRef<[u8]>> StatusMessageBuffer<T> {
 
     fn check_buffer_length(&self) -> Result<(), DecodeError> {
         let len = self.buffer.as_ref().len();
-        if len < STATUS_MESSAGE_LEN {
+        if len < MINIMAL_STATUS_MESSAGE_LEN {
             return Err(format!(
                 "invalid StatusMessageBuffer buffer: length is {len} \
-                instead of {STATUS_MESSAGE_LEN}"
+                instead of at least {MINIMAL_STATUS_MESSAGE_LEN}"
             )
             .into());
         }
@@ -115,12 +119,22 @@ impl<T: AsRef<[u8]>> StatusMessageBuffer<T> {
         parse_u32(&self.buffer.as_ref()[BACKLOG]).unwrap()
     }
 
-    pub fn feature_bitmap(&self) -> u32 {
-        parse_u32(&self.buffer.as_ref()[FEATURE_BITMAP]).unwrap()
+    pub fn feature_bitmap(&self) -> Option<u32> {
+        let buf = self.buffer.as_ref();
+        if buf.len() < FEATURE_BITMAP.end {
+            None
+        } else {
+            parse_u32(&buf[FEATURE_BITMAP]).ok()
+        }
     }
 
-    pub fn backlog_wait_time(&self) -> u32 {
-        parse_u32(&self.buffer.as_ref()[BACKLOG_WAIT_TIME]).unwrap()
+    pub fn backlog_wait_time(&self) -> Option<u32> {
+        let buf = self.buffer.as_ref();
+        if buf.len() < BACKLOG_WAIT_TIME.end {
+            None
+        } else {
+            parse_u32(&buf[BACKLOG_WAIT_TIME]).ok()
+        }
     }
 }
 
@@ -158,11 +172,17 @@ impl<T: AsRef<[u8]> + AsMut<[u8]>> StatusMessageBuffer<T> {
     }
 
     pub fn set_feature_bitmap(&mut self, value: u32) {
-        emit_u32(&mut self.buffer.as_mut()[FEATURE_BITMAP], value).unwrap()
+        let buf = &mut self.buffer.as_mut();
+        if buf.len() >= FEATURE_BITMAP.end {
+            emit_u32(&mut buf[FEATURE_BITMAP], value).unwrap();
+        }
     }
 
     pub fn set_backlog_wait_time(&mut self, value: u32) {
-        emit_u32(&mut self.buffer.as_mut()[BACKLOG_WAIT_TIME], value).unwrap()
+        let buf = &mut self.buffer.as_mut();
+        if buf.len() >= BACKLOG_WAIT_TIME.end {
+            emit_u32(&mut buf[BACKLOG_WAIT_TIME], value).unwrap();
+        }
     }
 }
 
@@ -186,7 +206,7 @@ impl<T: AsRef<[u8]>> Parseable<StatusMessageBuffer<T>> for StatusMessage {
 
 impl Emitable for StatusMessage {
     fn buffer_len(&self) -> usize {
-        STATUS_MESSAGE_LEN
+        MAXIMAL_STATUS_MESSAGE_LEN
     }
 
     fn emit(&self, buffer: &mut [u8]) {
@@ -199,7 +219,11 @@ impl Emitable for StatusMessage {
         buffer.set_backlog_limit(self.backlog_limit);
         buffer.set_lost(self.lost);
         buffer.set_backlog(self.backlog);
-        buffer.set_feature_bitmap(self.feature_bitmap);
-        buffer.set_backlog_wait_time(self.backlog_wait_time);
+        if let Some(feature_bitmap) = self.feature_bitmap {
+            buffer.set_feature_bitmap(feature_bitmap);
+        }
+        if let Some(backlog_wait_time) = self.backlog_wait_time {
+            buffer.set_backlog_wait_time(backlog_wait_time);
+        }
     }
 }
