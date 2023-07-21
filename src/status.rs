@@ -17,7 +17,8 @@ const BACKLOG: Field = 28..32;
 pub const MINIMAL_STATUS_MESSAGE_LEN: usize = BACKLOG.end;
 const FEATURE_BITMAP: Field = 32..36;
 const BACKLOG_WAIT_TIME: Field = 36..40;
-pub const MAXIMAL_STATUS_MESSAGE_LEN: usize = BACKLOG_WAIT_TIME.end;
+const BACKLOG_WAIT_TIME_ACTUAL: Field = 36..40;
+pub const MAXIMAL_STATUS_MESSAGE_LEN: usize = BACKLOG_WAIT_TIME_ACTUAL.end;
 
 #[derive(Debug, PartialEq, Eq, Clone, Default)]
 #[non_exhaustive]
@@ -44,6 +45,8 @@ pub struct StatusMessage {
     pub feature_bitmap: Option<u32>,
     /// Message queue wait timeout
     pub backlog_wait_time: Option<u32>,
+    /// Time spent waiting while message limit exceeded
+    pub backlog_wait_time_actual: Option<u32>,
 }
 
 impl StatusMessage {
@@ -136,6 +139,15 @@ impl<T: AsRef<[u8]>> StatusMessageBuffer<T> {
             parse_u32(&buf[BACKLOG_WAIT_TIME]).ok()
         }
     }
+
+    pub fn backlog_wait_time_actual(&self) -> Option<u32> {
+        let buf = self.buffer.as_ref();
+        if buf.len() < BACKLOG_WAIT_TIME_ACTUAL.end {
+            None
+        } else {
+            Some(NativeEndian::read_u32(&buf[BACKLOG_WAIT_TIME_ACTUAL]))
+        }
+    }
 }
 
 impl<T: AsRef<[u8]> + AsMut<[u8]>> StatusMessageBuffer<T> {
@@ -184,6 +196,13 @@ impl<T: AsRef<[u8]> + AsMut<[u8]>> StatusMessageBuffer<T> {
             emit_u32(&mut buf[BACKLOG_WAIT_TIME], value).unwrap();
         }
     }
+
+    pub fn set_backlog_wait_time_actual(&mut self, value: u32) {
+        let buf = &mut self.buffer.as_mut();
+        if buf.len() >= BACKLOG_WAIT_TIME_ACTUAL.end {
+            NativeEndian::write_u32(&mut buf[BACKLOG_WAIT_TIME_ACTUAL], value)
+        }
+    }
 }
 
 impl<T: AsRef<[u8]>> Parseable<StatusMessageBuffer<T>> for StatusMessage {
@@ -200,6 +219,7 @@ impl<T: AsRef<[u8]>> Parseable<StatusMessageBuffer<T>> for StatusMessage {
             backlog: buf.backlog(),
             feature_bitmap: buf.feature_bitmap(),
             backlog_wait_time: buf.backlog_wait_time(),
+            backlog_wait_time_actual: buf.backlog_wait_time_actual(),
         })
     }
 }
@@ -224,6 +244,9 @@ impl Emitable for StatusMessage {
         }
         if let Some(backlog_wait_time) = self.backlog_wait_time {
             buffer.set_backlog_wait_time(backlog_wait_time);
+        }
+        if let Some(backlog_wait_time_actual) = self.backlog_wait_time_actual {
+            buffer.set_backlog_wait_time_actual(backlog_wait_time_actual);
         }
     }
 }
