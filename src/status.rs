@@ -145,7 +145,7 @@ impl<T: AsRef<[u8]>> StatusMessageBuffer<T> {
         if buf.len() < BACKLOG_WAIT_TIME_ACTUAL.end {
             None
         } else {
-            Some(NativeEndian::read_u32(&buf[BACKLOG_WAIT_TIME_ACTUAL]))
+            parse_u32(&buf[BACKLOG_WAIT_TIME_ACTUAL]).ok()
         }
     }
 }
@@ -200,7 +200,7 @@ impl<T: AsRef<[u8]> + AsMut<[u8]>> StatusMessageBuffer<T> {
     pub fn set_backlog_wait_time_actual(&mut self, value: u32) {
         let buf = &mut self.buffer.as_mut();
         if buf.len() >= BACKLOG_WAIT_TIME_ACTUAL.end {
-            NativeEndian::write_u32(&mut buf[BACKLOG_WAIT_TIME_ACTUAL], value)
+            emit_u32(&mut buf[BACKLOG_WAIT_TIME_ACTUAL], value).unwrap();
         }
     }
 }
